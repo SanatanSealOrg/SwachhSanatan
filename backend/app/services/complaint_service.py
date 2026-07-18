@@ -10,7 +10,7 @@ from uuid import UUID
 from datetime import datetime
 from typing import Optional, List
 from sqlalchemy.orm import Session
-from geoalchemy2 import func
+from sqlalchemy import func
 from backend_models import Complaint, Ward, ComplaintStatus, WasteType
 
 logger = logging.getLogger(__name__)
@@ -88,7 +88,9 @@ def create_complaint(
     image_url: str,
     waste_type: Optional[str] = None,
     severity_score: int = 3,
-    ward_id: Optional[UUID] = None
+    ward_id: Optional[UUID] = None,
+    ai_waste_type: Optional[str] = None,
+    ai_confidence: Optional[float] = None
 ) -> Complaint:
     """
     Create new complaint record in database.
@@ -138,7 +140,7 @@ def create_complaint(
                 raise ValueError(f"Ward {ward_id} not found")
 
         # Create location point
-        from geoalchemy2 import func
+        from sqlalchemy import func
         point = f"POINT({longitude} {latitude})"
 
         # Generate ticket number
@@ -157,7 +159,9 @@ def create_complaint(
             severity_score=severity_score,
             image_urls=[image_url] if image_url else [],
             status=ComplaintStatus.open,
-            created_at=datetime.utcnow()
+            created_at=datetime.utcnow(),
+            ai_waste_type=ai_waste_type,
+            ai_confidence=ai_confidence
         )
 
         db.add(complaint)
@@ -166,14 +170,16 @@ def create_complaint(
 
         logger.info(f"Complaint created: {complaint.ticket_number} (citizen: {citizen_id})")
 
-        # Trigger AI classification for image
-        try:
-            from backend.app.services import ai_service
-            classification = ai_service.classify_image_with_openai(image_url)
-            ai_service.update_complaint_with_classification(db, complaint.id, classification)
-            logger.info(f"AI classification completed for complaint {complaint.ticket_number}")
-        except Exception as e:
-            logger.error(f"AI classification failed for complaint {complaint.ticket_number}: {str(e)}")
+        # Trigger AI classification only when the AI-draft flow hasn't already
+        # analyzed the photo (draft submissions carry ai_waste_type/ai_confidence)
+        if ai_waste_type is None and image_url:
+            try:
+                from backend.app.services import ai_service
+                classification = ai_service.classify_image_with_openai(image_url)
+                ai_service.update_complaint_with_classification(db, complaint.id, classification)
+                logger.info(f"AI classification completed for complaint {complaint.ticket_number}")
+            except Exception as e:
+                logger.error(f"AI classification failed for complaint {complaint.ticket_number}: {str(e)}")
 
         # Auto-assign to available officer
         try:

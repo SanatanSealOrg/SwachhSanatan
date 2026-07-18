@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   postgres:
-    image: postgis/postgis:16-3.3
+    image: postgis/postgis:16-3.4
     environment:
       POSTGRES_USER: cleanloop
       POSTGRES_PASSWORD: cleanloop_dev
@@ -34,17 +34,12 @@ services:
       - cleanloop
 
   localstack:
-    image: localstack/localstack:latest
+    image: localstack/localstack:4.3
     ports:
       - "4566:4566"
     environment:
       SERVICES: s3
       DEBUG: 1
-      DATA_DIR: /tmp/localstack/data
-      DOCKER_HOST: unix:///var/run/docker.sock
-    volumes:
-      - localstack_data:/tmp/localstack
-      - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
     networks:
       - cleanloop

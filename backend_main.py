@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 from backend.app.api import auth
 from backend.app.api import complaints
 from backend.app.api import assignments
+from backend.app.api import wards
+from backend.app.api import hotspots
 
 # Lifespan context for startup/shutdown
 @asynccontextmanager
@@ -60,12 +62,8 @@ async def root():
 app.include_router(auth.router, prefix="/api")
 app.include_router(complaints.router, prefix="/api")
 app.include_router(assignments.router, prefix="/api")
-
-# TODO: Add routes
-# - /api/complaints
-# - /api/assignments
-# - /api/hotspots
-# - /api/metrics
+app.include_router(wards.router, prefix="/api")
+app.include_router(hotspots.router, prefix="/api")
 
 if __name__ == "__main__":
     import uvicorn

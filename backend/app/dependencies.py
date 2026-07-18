@@ -5,7 +5,7 @@ Provides database sessions and current user extraction from JWT tokens.
 """
 
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthenticationCredentials
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from backend_database import SessionLocal
 from backend_models import User, UserType
@@ -37,7 +37,7 @@ def get_db() -> Session:
 
 
 async def get_current_user(
-    credentials: HTTPAuthenticationCredentials = Depends(security),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
 ) -> User:
     """

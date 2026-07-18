@@ -11,7 +11,7 @@ DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://cleanloop:cleanloop_dev@l
 # Create database engine
 engine = create_engine(
     DATABASE_URL,
-    echo=os.getenv("DEBUG", False),
+    echo=os.getenv("DEBUG", "False").lower() in ("true", "1"),
     pool_pre_ping=True  # Verify connection before using
 )
 

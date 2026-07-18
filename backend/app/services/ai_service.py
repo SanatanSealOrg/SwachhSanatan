@@ -5,6 +5,8 @@ Integrates with OpenAI's GPT-4 Vision model to classify waste images
 and extract waste type, confidence score, and description.
 """
 
+import base64
+import json
 import logging
 import os
 from typing import Optional, Dict
@@ -13,6 +15,155 @@ from sqlalchemy.orm import Session
 import requests
 
 logger = logging.getLogger(__name__)
+
+VALID_WASTE_TYPES = ["bin", "dumping", "construction", "biohazard"]
+
+ANALYZE_PROMPT = (
+    "You are a municipal sanitation inspector drafting an official waste complaint "
+    "from a citizen's photo. Respond ONLY with a JSON object:\n"
+    "{\n"
+    '  "waste_type": one of "bin" (overflowing/damaged public bin), "dumping" '
+    '(illegal garbage dumping), "construction" (construction debris), '
+    '"biohazard" (medical/animal/sewage hazard),\n'
+    '  "severity": integer 1-5 (1=minor litter, 3=significant accumulation, '
+    "5=urgent public-health hazard),\n"
+    '  "severity_reasoning": one sentence justifying the severity,\n'
+    '  "confidence": number 0.0-1.0 that the photo shows the stated waste_type,\n'
+    '  "title": short complaint title, max 10 words,\n'
+    '  "description": 2-4 sentences in formal official-report tone describing what '
+    "is visible, its approximate extent, and impact on the area,\n"
+    '  "hazards": array of short strings (e.g. "attracts stray animals", '
+    '"blocks pedestrian path"), empty if none,\n'
+    '  "is_waste_visible": boolean, false if the photo does not show waste\n'
+    "}\n"
+    "Do not invent details not visible in the photo."
+)
+
+
+def _mock_draft(reason: str) -> Dict:
+    """Deterministic offline draft so the flow works without an API key."""
+    logger.info(f"AI analyze falling back to mock draft ({reason})")
+    return {
+        "waste_type": "dumping",
+        "severity": 3,
+        "severity_reasoning": (
+            "A noticeable accumulation of mixed waste is present but does not "
+            "pose an immediate public-health emergency."
+        ),
+        "confidence": 0.55,
+        "title": "Accumulated waste requiring municipal attention",
+        "description": (
+            "An accumulation of mixed household and packaging waste is visible at "
+            "the reported location. The waste occupies a portion of the public "
+            "space and appears to have been present for some time. Prompt "
+            "collection is recommended to prevent further accumulation and "
+            "nuisance to residents."
+        ),
+        "hazards": ["attracts stray animals", "foul odour in the vicinity"],
+        "is_waste_visible": True,
+        "source": "mock",
+    }
+
+
+def _validate_draft(raw: Dict) -> Dict:
+    """Clamp/validate model output into a safe draft dict."""
+    waste_type = raw.get("waste_type")
+    if waste_type not in VALID_WASTE_TYPES:
+        waste_type = None
+    try:
+        severity = int(raw.get("severity", 3))
+    except (TypeError, ValueError):
+        severity = 3
+    severity = max(1, min(5, severity))
+    try:
+        confidence = float(raw.get("confidence", 0))
+    except (TypeError, ValueError):
+        confidence = 0.0
+    confidence = max(0.0, min(1.0, confidence))
+    hazards = raw.get("hazards")
+    if not isinstance(hazards, list):
+        hazards = []
+    return {
+        "waste_type": waste_type,
+        "severity": severity,
+        "severity_reasoning": str(raw.get("severity_reasoning") or ""),
+        "confidence": confidence,
+        "title": str(raw.get("title") or "Waste issue reported"),
+        "description": str(raw.get("description") or ""),
+        "hazards": [str(h) for h in hazards][:6],
+        "is_waste_visible": bool(raw.get("is_waste_visible", True)),
+        "source": "openai",
+    }
+
+
+def analyze_waste_image(image_bytes: bytes) -> Dict:
+    """
+    Analyze a waste photo with GPT-4o and draft a full official complaint.
+
+    Sends the image as a base64 data URL (LocalStack/S3 URLs are not reachable
+    by OpenAI's servers). Never raises — falls back to a deterministic mock
+    draft when no API key is configured or on any API/parse failure, so the
+    reporting flow always works.
+
+    Returns dict: waste_type, severity, severity_reasoning, confidence, title,
+    description, hazards, is_waste_visible, source ("openai" | "mock").
+    """
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return _mock_draft("OPENAI_API_KEY not configured")
+
+    try:
+        b64 = base64.b64encode(image_bytes).decode("ascii")
+        payload = {
+            "model": "gpt-4o",
+            "response_format": {"type": "json_object"},
+            "max_tokens": 800,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": ANALYZE_PROMPT},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
+                        },
+                    ],
+                }
+            ],
+        }
+        response = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=45,
+        )
+        if response.status_code != 200:
+            logger.error(
+                f"OpenAI analyze error: {response.status_code} - {response.text[:500]}"
+            )
+            return _mock_draft(f"API error {response.status_code}")
+
+        content = (
+            response.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+        )
+        content = content.strip()
+        if content.startswith("```"):
+            content = content.strip("`")
+            if content.startswith("json"):
+                content = content[4:]
+        draft = _validate_draft(json.loads(content))
+        logger.info(
+            f"AI draft generated: {draft['waste_type']} severity={draft['severity']} "
+            f"confidence={draft['confidence']}"
+        )
+        return draft
+
+    except Exception as e:
+        logger.error(f"AI analyze failed: {str(e)}")
+        return _mock_draft(f"exception: {e}")
 
 
 def classify_image_with_openai(image_url: str) -> Dict:

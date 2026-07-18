@@ -7,11 +7,15 @@ listing complaints by ward, and updating complaint status.
 
 import io
 import logging
+import uuid as uuid_module
+from datetime import datetime, timedelta
 from uuid import UUID
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from backend_models import User, Complaint
+from backend.app.services import ai_service
 from backend_schemas import ComplaintCreateRequest, ComplaintResponse, ComplaintUpdateRequest
 from backend.app.dependencies import get_db, get_current_user, get_current_officer
 from backend.app.services import complaint_service
@@ -50,6 +54,122 @@ def _complaint_to_dict(complaint: Complaint) -> dict:
     }
 
 
+@router.post("/complaints/analyze", response_model=dict)
+async def analyze_complaint_photo(
+    file: UploadFile = File(...),
+    latitude: Optional[float] = Form(None),
+    longitude: Optional[float] = Form(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Analyze a waste photo with AI and return a drafted complaint for review.
+
+    The image is processed and uploaded once to a staging location; the returned
+    image_key can be passed to POST /api/complaints to attach the same image
+    without re-uploading.
+
+    Returns:
+        {
+            "draft": {waste_type, severity, severity_reasoning, confidence,
+                      title, description, hazards, is_waste_visible, source},
+            "image": {"url": "...", "key": "complaints/drafts/<uuid>/<file>.jpg"}
+        }
+    """
+    is_valid, error_msg = validate_file_type(file.filename)
+    if not is_valid:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
+
+    file_content = await file.read()
+    is_valid, error_msg = validate_file_size(len(file_content), max_mb=5)
+    if not is_valid:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
+
+    try:
+        clean_image = image_service.strip_exif_metadata(file_content)
+        compressed_image = image_service.compress_image(clean_image)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Image processing failed: {str(e)}"
+        )
+
+    try:
+        draft_id = f"drafts/{uuid_module.uuid4()}"
+        s3_url = image_service.upload_image_to_s3(
+            file_bytes=compressed_image,
+            filename=file.filename,
+            complaint_id=draft_id,
+        )
+        s3_key = f"complaints/{draft_id}/{file.filename}"
+    except ValueError as e:
+        logger.error(f"Draft image upload failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to upload image. Please try again."
+        )
+
+    # Never raises — falls back to a mock draft on any AI failure
+    draft = ai_service.analyze_waste_image(compressed_image)
+
+    logger.info(
+        f"Photo analyzed for user {current_user.id}: "
+        f"{draft.get('waste_type')} (source: {draft.get('source')})"
+    )
+    return {"draft": draft, "image": {"url": s3_url, "key": s3_key}}
+
+
+@router.get("/complaints/map", response_model=dict)
+async def complaints_map_feed(db: Session = Depends(get_db)):
+    """
+    Public map feed: complaint points from the last 30 days (max 500).
+
+    No auth and no personal data — powers the public dashboard map.
+    """
+    try:
+        cutoff = datetime.utcnow() - timedelta(days=30)
+        rows = (
+            db.query(
+                Complaint.id,
+                Complaint.ticket_number,
+                Complaint.status,
+                Complaint.waste_type,
+                Complaint.severity_score,
+                Complaint.created_at,
+                Complaint.image_urls,
+                func.ST_Y(Complaint.location).label("lat"),
+                func.ST_X(Complaint.location).label("lon"),
+            )
+            .filter(Complaint.created_at >= cutoff)
+            .order_by(Complaint.created_at.desc())
+            .limit(500)
+            .all()
+        )
+        points = [
+            {
+                "id": str(r.id),
+                "ticket_number": r.ticket_number,
+                "status": r.status.value if hasattr(r.status, "value") else r.status,
+                "waste_type": (
+                    r.waste_type.value if hasattr(r.waste_type, "value") else r.waste_type
+                ),
+                "severity_score": r.severity_score,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "lat": r.lat,
+                "lon": r.lon,
+                "thumbnail_url": (r.image_urls or [None])[0],
+            }
+            for r in rows
+        ]
+        return {"complaints": points, "count": len(points)}
+    except Exception as e:
+        logger.error(f"Error building map feed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to load map data"
+        )
+
+
 @router.post("/complaints", response_model=dict, status_code=status.HTTP_201_CREATED)
 async def create_complaint(
     description: str = Form(...),
@@ -57,7 +177,10 @@ async def create_complaint(
     longitude: float = Form(...),
     waste_type: Optional[str] = Form(None),
     severity_score: Optional[int] = Form(3),
-    file: UploadFile = File(...),
+    file: UploadFile = File(None),
+    image_key: Optional[str] = Form(None),
+    ai_waste_type: Optional[str] = Form(None),
+    ai_confidence: Optional[float] = Form(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -70,7 +193,10 @@ async def create_complaint(
     - longitude: GPS longitude -180 to 180 (required)
     - waste_type: Type of waste - 'bin', 'dumping', 'construction', 'biohazard' (optional)
     - severity_score: Severity 1-5 (default 3, optional)
-    - file: Image file (jpg, jpeg, png, gif, webp) max 5MB (required)
+    - file: Image file (jpg, jpeg, png, gif, webp) max 5MB — required unless image_key given
+    - image_key: staged draft image key from POST /complaints/analyze (reuses that
+      upload instead of a new file)
+    - ai_waste_type / ai_confidence: AI draft metadata to persist on the complaint
 
     Returns:
         ComplaintResponse with ticket_number, complaint_id, status, ward_id
@@ -110,24 +236,38 @@ async def create_complaint(
                 detail=error_msg
             )
 
-        # Validate file type
-        is_valid, error_msg = validate_file_type(file.filename)
-        if not is_valid:
+        # Either a fresh photo or a staged draft image is required
+        if file is None and not image_key:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=error_msg
+                detail="Either a photo file or an image_key from /complaints/analyze is required"
             )
-
-        # Read file content
-        file_content = await file.read()
-
-        # Validate file size (5MB limit)
-        is_valid, error_msg = validate_file_size(len(file_content), max_mb=5)
-        if not is_valid:
+        if image_key and not image_key.startswith("complaints/drafts/"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=error_msg
+                detail="Invalid image_key"
             )
+
+        file_content = None
+        if file is not None:
+            # Validate file type
+            is_valid, error_msg = validate_file_type(file.filename)
+            if not is_valid:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=error_msg
+                )
+
+            # Read file content
+            file_content = await file.read()
+
+            # Validate file size (5MB limit)
+            is_valid, error_msg = validate_file_size(len(file_content), max_mb=5)
+            if not is_valid:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=error_msg
+                )
 
         # Validate waste_type if provided
         if waste_type:
@@ -146,13 +286,12 @@ async def create_complaint(
                 detail=error_msg
             )
 
-        # Process image
         try:
-            # Strip EXIF metadata
-            clean_image = image_service.strip_exif_metadata(file_content)
-
-            # Compress image
-            compressed_image = image_service.compress_image(clean_image)
+            compressed_image = None
+            if file_content is not None:
+                # Fresh upload: strip EXIF + compress
+                clean_image = image_service.strip_exif_metadata(file_content)
+                compressed_image = image_service.compress_image(clean_image)
 
             # Create complaint record (will auto-detect ward)
             complaint = complaint_service.create_complaint(
@@ -161,19 +300,24 @@ async def create_complaint(
                 latitude=latitude,
                 longitude=longitude,
                 description=description,
-                image_url="",  # Will update after S3 upload
+                image_url="",  # Will update after S3 upload/promotion
                 waste_type=waste_type,
-                severity_score=severity_score
+                severity_score=severity_score,
+                ai_waste_type=ai_waste_type,
+                ai_confidence=ai_confidence
             )
 
-            # Upload to S3
-            filename = f"{complaint.id}_{file.filename}"
-            s3_url = image_service.upload_image_to_s3(
-                file_bytes=compressed_image,
-                filename=filename,
-                complaint_id=str(complaint.id),
-                bucket=os.getenv("S3_BUCKET", "cleanloop-complaints")
-            )
+            if compressed_image is not None:
+                # Upload fresh photo to S3
+                filename = f"{complaint.id}_{file.filename}"
+                s3_url = image_service.upload_image_to_s3(
+                    file_bytes=compressed_image,
+                    filename=filename,
+                    complaint_id=str(complaint.id),
+                )
+            else:
+                # Reuse the image already staged by /complaints/analyze
+                s3_url = image_service.promote_draft_image(image_key, str(complaint.id))
 
             # Update complaint with image URL
             complaint.image_urls = [s3_url]

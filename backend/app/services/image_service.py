@@ -153,6 +153,55 @@ def generate_thumbnail(image_bytes: bytes, size: tuple = (200, 200)) -> bytes:
         raise ValueError(f"Failed to generate thumbnail: {str(e)}")
 
 
+def _build_public_url(bucket: str, s3_key: str) -> str:
+    """
+    Build a browser-reachable URL for an S3 object.
+
+    AWS_PUBLIC_ENDPOINT_URL overrides AWS_ENDPOINT_URL for URL construction —
+    needed when the backend reaches LocalStack via a docker-internal hostname
+    (http://localstack:4566) that browsers cannot resolve.
+    """
+    endpoint_url = os.getenv("AWS_PUBLIC_ENDPOINT_URL") or os.getenv("AWS_ENDPOINT_URL")
+    if endpoint_url:
+        return f"{endpoint_url}/{bucket}/{s3_key}"
+    region = os.getenv("AWS_REGION", "us-east-1")
+    return f"https://{bucket}.s3.{region}.amazonaws.com/{s3_key}"
+
+
+def promote_draft_image(image_key: str, complaint_id: str, bucket: str = None) -> str:
+    """
+    Move a staged draft image (complaints/drafts/<uuid>/<file>) to its final
+    complaint location and return the final public URL.
+
+    Args:
+        image_key: S3 key of the draft object (must be under complaints/drafts/)
+        complaint_id: UUID of the created complaint
+        bucket: S3 bucket (env default if not provided)
+
+    Raises:
+        ValueError: If the key is not a draft key or the S3 operation fails
+    """
+    if not image_key.startswith("complaints/drafts/"):
+        raise ValueError("Invalid draft image key")
+    try:
+        if bucket is None:
+            bucket = os.getenv("AWS_S3_BUCKET") or os.getenv("S3_BUCKET", "cleanloop-complaints")
+        s3_client = get_s3_client()
+        filename = image_key.rsplit("/", 1)[-1]
+        final_key = get_s3_key(str(complaint_id), filename)
+        s3_client.copy_object(
+            Bucket=bucket,
+            CopySource={"Bucket": bucket, "Key": image_key},
+            Key=final_key,
+        )
+        s3_client.delete_object(Bucket=bucket, Key=image_key)
+        logger.info(f"Draft image promoted: {image_key} -> {final_key}")
+        return _build_public_url(bucket, final_key)
+    except ClientError as e:
+        logger.error(f"Draft promotion failed: {str(e)}")
+        raise ValueError(f"Failed to attach draft image: {str(e)}")
+
+
 def upload_image_to_s3(
     file_bytes: bytes,
     filename: str,
@@ -182,7 +231,7 @@ def upload_image_to_s3(
     """
     try:
         if bucket is None:
-            bucket = os.getenv("S3_BUCKET", "cleanloop-complaints")
+            bucket = os.getenv("AWS_S3_BUCKET") or os.getenv("S3_BUCKET", "cleanloop-complaints")
 
         s3_client = get_s3_client()
         s3_key = get_s3_key(complaint_id, filename)
@@ -195,15 +244,7 @@ def upload_image_to_s3(
             ContentType="image/jpeg"
         )
 
-        # Generate URL
-        endpoint_url = os.getenv("AWS_ENDPOINT_URL", None)
-        if endpoint_url:
-            # LocalStack or custom endpoint
-            url = f"{endpoint_url}/{bucket}/{s3_key}"
-        else:
-            # AWS S3
-            region = os.getenv("AWS_REGION", "us-east-1")
-            url = f"https://{bucket}.s3.{region}.amazonaws.com/{s3_key}"
+        url = _build_public_url(bucket, s3_key)
 
         logger.info(f"Image uploaded to S3: {s3_key}")
         return url
