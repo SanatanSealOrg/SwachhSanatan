@@ -51,6 +51,8 @@ PYTHONPATH=. ./venv/Scripts/python backend/seed_dev_data.py --demo-data
 ./venv/Scripts/python test_complaints_integration.py
 # AI-draft flow + dashboard endpoints (needs --demo-data seed; API_URL to override port)
 ./venv/Scripts/python test_dashboard_integration.py
+# Round 2: ward mapping, officer priority queue, resolve verification, mine/track
+./venv/Scripts/python test_round2_integration.py
 ```
 
 Frontend (Vite, port 3000, proxies `/api` → localhost:8000), run from `frontend/`: `npm run dev` / `npm run build` / `npm run lint` / `npm run type-check`.

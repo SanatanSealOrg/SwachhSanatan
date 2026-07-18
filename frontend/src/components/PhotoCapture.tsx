@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import CameraCapture from './CameraCapture'
 
 interface Props {
   file: File | null
@@ -27,7 +28,9 @@ function PhotoCapture({
 }: Props) {
   const [locating, setLocating] = useState(false)
   const [locError, setLocError] = useState('')
+  const [cameraOpen, setCameraOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const cameraSupported = Boolean(navigator.mediaDevices?.getUserMedia)
 
   const useMyLocation = () => {
     if (!navigator.geolocation) {
@@ -76,15 +79,37 @@ function PhotoCapture({
             </button>
           </div>
         ) : (
-          <button
-            type="button"
-            onClick={() => inputRef.current?.click()}
-            className="w-full border-2 border-dashed border-gray-300 rounded-xl py-12 flex flex-col items-center gap-2 text-gray-500 hover:border-green-500 hover:text-green-600 transition-colors"
-          >
-            <span className="text-4xl">📷</span>
-            <span className="font-medium">Tap to take or choose a photo</span>
-            <span className="text-xs">jpg / png / webp, max 5MB</span>
-          </button>
+          <div className={`grid gap-3 ${cameraSupported ? 'grid-cols-2' : 'grid-cols-1'}`}>
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              className="border-2 border-dashed border-gray-300 rounded-xl py-10 flex flex-col items-center gap-2 text-gray-500 hover:border-green-500 hover:text-green-600 transition-colors"
+            >
+              <span className="text-4xl">🖼️</span>
+              <span className="font-medium">Upload a photo</span>
+              <span className="text-xs">jpg / png / webp, max 5MB</span>
+            </button>
+            {cameraSupported && (
+              <button
+                type="button"
+                onClick={() => setCameraOpen(true)}
+                className="border-2 border-dashed border-gray-300 rounded-xl py-10 flex flex-col items-center gap-2 text-gray-500 hover:border-green-500 hover:text-green-600 transition-colors"
+              >
+                <span className="text-4xl">📸</span>
+                <span className="font-medium">Use camera</span>
+                <span className="text-xs">geotagged, taken right now</span>
+              </button>
+            )}
+          </div>
+        )}
+        {cameraOpen && (
+          <CameraCapture
+            onCapture={(f) => {
+              onFileChange(f)
+              setCameraOpen(false)
+            }}
+            onClose={() => setCameraOpen(false)}
+          />
         )}
         <input
           ref={inputRef}

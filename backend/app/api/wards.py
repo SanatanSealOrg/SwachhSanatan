@@ -54,19 +54,19 @@ async def list_wards(db: Session = Depends(get_db)):
 
 
 @router.get("/wards/geojson", response_model=dict)
-async def wards_geojson(db: Session = Depends(get_db)):
+async def wards_geojson(include_dev: bool = False, db: Session = Depends(get_db)):
     """
     Ward polygons as a GeoJSON FeatureCollection (public) — powers the
-    dashboard map. The city-wide "(Dev)" fallback ward is excluded so it
-    doesn't blanket the map.
+    dashboard map. The city-wide "(Dev)" desk ward is excluded by default so
+    it doesn't blanket the public map; officer views pass include_dev=true.
     """
     try:
-        rows = (
-            db.query(Ward, func.ST_AsGeoJSON(Ward.geometry))
-            .filter(Ward.geometry.isnot(None), ~Ward.name.like("%(Dev)"))
-            .order_by(Ward.ward_number)
-            .all()
+        query = db.query(Ward, func.ST_AsGeoJSON(Ward.geometry)).filter(
+            Ward.geometry.isnot(None)
         )
+        if not include_dev:
+            query = query.filter(~Ward.name.like("%(Dev)"))
+        rows = query.order_by(Ward.ward_number).all()
         features = [
             {
                 "type": "Feature",

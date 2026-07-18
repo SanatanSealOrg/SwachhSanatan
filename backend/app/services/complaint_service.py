@@ -59,24 +59,42 @@ def find_ward_by_location(db: Session, latitude: float, longitude: float) -> Opt
     """
     try:
         # Create point from lat/lon
-        from geoalchemy2 import Geometry
         point = f"POINT({longitude} {latitude})"
 
-        # Query wards where point is within geometry
-        ward = db.query(Ward).filter(
-            func.ST_Within(func.ST_GeomFromText(point, 4326), Ward.geometry)
-        ).first()
+        # Query wards where point is within geometry. Named locality wards win
+        # over the city-wide "(Dev)" fallback polygon that overlaps them all
+        # (false sorts before true, so non-Dev wards come first).
+        ward = (
+            db.query(Ward)
+            .filter(func.ST_Within(func.ST_GeomFromText(point, 4326), Ward.geometry))
+            .order_by(Ward.name.like("%(Dev)"), Ward.ward_number)
+            .first()
+        )
 
         if ward:
             logger.info(f"Ward found for location ({latitude}, {longitude}): {ward.name}")
         else:
-            logger.warning(f"No ward found for location ({latitude}, {longitude})")
+            # Outside every mapped ward → route to the city-wide desk ward
+            ward = db.query(Ward).filter(Ward.name.like("%(Dev)")).first()
+            if ward:
+                logger.info(
+                    f"No containing ward for ({latitude}, {longitude}); "
+                    f"routed to city-wide desk: {ward.name}"
+                )
+            else:
+                logger.warning(f"No ward found for location ({latitude}, {longitude})")
 
         return ward
 
     except Exception as e:
         logger.error(f"Error finding ward by location: {str(e)}")
         return None
+
+
+def find_ward_for_display(db: Session, latitude: float, longitude: float) -> Optional[Ward]:
+    """Ward lookup for user-facing display (AI wizard "mapping" step) —
+    same named-ward-first preference as complaint routing."""
+    return find_ward_by_location(db, latitude, longitude)
 
 
 def create_complaint(

@@ -24,6 +24,8 @@ from datetime import datetime, timedelta
 
 from backend_database import SessionLocal
 from backend_models import (
+    Assignment,
+    AssignmentStatus,
     Complaint,
     ComplaintStatus,
     User,
@@ -245,12 +247,78 @@ def seed_demo_complaints(db, ward_by_name):
     logger.info(f"Seeded {created} demo complaints across {len(ward_by_name)} wards.")
 
 
+def ensure_demo_assignments(db):
+    """
+    Create Assignment rows for demo complaints that were inserted directly
+    (bypassing auto-assign), so officer queues, status timelines and
+    verification badges have data. Idempotent; also upgrades existing DBs.
+    """
+    rng = random.Random(7)
+    demo_complaints = (
+        db.query(Complaint)
+        .filter(
+            Complaint.ticket_number.like(f"{DEMO_TICKET_PREFIX}%"),
+            Complaint.status.in_(
+                [
+                    ComplaintStatus.assigned,
+                    ComplaintStatus.in_progress,
+                    ComplaintStatus.resolved,
+                ]
+            ),
+        )
+        .all()
+    )
+    if not demo_complaints:
+        return
+
+    existing = {
+        str(a.complaint_id)
+        for a in db.query(Assignment)
+        .filter(Assignment.complaint_id.in_([c.id for c in demo_complaints]))
+        .all()
+    }
+    officer_by_ward = {
+        str(w.id): w.primary_officer_id
+        for w in db.query(Ward).all()
+        if w.primary_officer_id
+    }
+
+    created = 0
+    for c in demo_complaints:
+        if str(c.id) in existing:
+            continue
+        officer_id = officer_by_ward.get(str(c.ward_id))
+        if not officer_id:
+            continue
+        assigned_at = c.created_at + timedelta(hours=rng.uniform(1, 6))
+        assignment = Assignment(
+            complaint_id=c.id,
+            assigned_to=officer_id,
+            assigned_at=assigned_at,
+            due_at=assigned_at + timedelta(hours=24),
+        )
+        if c.status == ComplaintStatus.resolved:
+            assignment.status = AssignmentStatus.completed
+            assignment.completed_at = c.resolved_at
+            if rng.random() < 0.6:
+                assignment.verified = True
+                assignment.verification_ssim_score = round(rng.uniform(0.20, 0.60), 2)
+        elif c.status == ComplaintStatus.in_progress:
+            assignment.status = AssignmentStatus.in_progress
+        db.add(assignment)
+        created += 1
+
+    db.commit()
+    logger.info(f"Seeded {created} demo assignments.")
+
+
 def seed(demo_data: bool = False):
     db = SessionLocal()
     try:
         ward_by_name = seed_wards_and_officers(db)
         if demo_data:
             seed_demo_complaints(db, ward_by_name)
+            ensure_demo_assignments(db)
         logger.info("Seed complete.")
     finally:
         db.close()

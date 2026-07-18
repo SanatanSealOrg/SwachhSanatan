@@ -311,6 +311,113 @@ def classify_image_with_openai(image_url: str) -> Dict:
         }
 
 
+VERIFY_PROMPT = (
+    "You are a municipal sanitation verifier. You are shown a BEFORE photo of a "
+    "reported waste issue (if available) and an AFTER photo taken by the officer "
+    "who claims to have resolved it. Judge whether the waste has genuinely been "
+    "cleaned up. Respond ONLY with a JSON object:\n"
+    '{"cleaned": true/false, "confidence": 0.0-1.0, '
+    '"note": "one sentence explaining your judgement"}\n'
+    "Be skeptical: if the AFTER photo still shows significant waste, or does not "
+    "plausibly show the same kind of location, set cleaned to false."
+)
+
+
+def verify_cleanup(before_bytes: Optional[bytes], after_bytes: bytes) -> Dict:
+    """
+    Verify a cleanup using GPT-4o vision on before/after photos.
+
+    Never raises — returns a mock verdict when no API key is configured or on
+    any API/parse failure, so resolution is never blocked.
+
+    Returns dict: cleaned (bool), confidence (0-1), note, source ("openai"|"mock").
+    """
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return {
+            "cleaned": True,
+            "confidence": 0.6,
+            "note": "Offline verification (demo mode)",
+            "source": "mock",
+        }
+
+    try:
+        content = [{"type": "text", "text": VERIFY_PROMPT}]
+        if before_bytes:
+            content.append({"type": "text", "text": "BEFORE photo:"})
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "data:image/jpeg;base64,"
+                        + base64.b64encode(before_bytes).decode("ascii")
+                    },
+                }
+            )
+        else:
+            content.append(
+                {"type": "text", "text": "No BEFORE photo is available."}
+            )
+        content.append({"type": "text", "text": "AFTER photo:"})
+        content.append(
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": "data:image/jpeg;base64,"
+                    + base64.b64encode(after_bytes).decode("ascii")
+                },
+            }
+        )
+
+        response = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "gpt-4o",
+                "response_format": {"type": "json_object"},
+                "max_tokens": 300,
+                "messages": [{"role": "user", "content": content}],
+            },
+            timeout=45,
+        )
+        if response.status_code != 200:
+            logger.error(
+                f"OpenAI verify error: {response.status_code} - {response.text[:500]}"
+            )
+            raise ValueError(f"API error {response.status_code}")
+
+        raw = json.loads(
+            response.json()["choices"][0]["message"]["content"].strip().strip("`")
+        )
+        try:
+            confidence = float(raw.get("confidence", 0))
+        except (TypeError, ValueError):
+            confidence = 0.0
+        verdict = {
+            "cleaned": bool(raw.get("cleaned", False)),
+            "confidence": max(0.0, min(1.0, confidence)),
+            "note": str(raw.get("note") or ""),
+            "source": "openai",
+        }
+        logger.info(
+            f"Cleanup verified: cleaned={verdict['cleaned']} "
+            f"confidence={verdict['confidence']}"
+        )
+        return verdict
+
+    except Exception as e:
+        logger.error(f"Cleanup verification failed: {str(e)}")
+        return {
+            "cleaned": True,
+            "confidence": 0.5,
+            "note": "Automatic verification unavailable — resolved without AI check",
+            "source": "mock",
+        }
+
+
 def update_complaint_with_classification(
     db: Session,
     complaint_id: UUID,

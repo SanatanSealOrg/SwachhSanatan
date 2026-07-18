@@ -31,6 +31,7 @@ HOTSPOT_EPS_M = 250.0
 HOTSPOT_MIN_SAMPLES = 4
 HOTSPOT_WINDOW_DAYS = 30
 HOTSPOT_MIN_RADIUS_M = 60.0
+HOTSPOT_CHRONIC_DAYS = 14
 _CACHE_TTL_S = 60.0
 
 _hotspot_cache: dict = {"computed_at": 0.0, "result": None}
@@ -142,6 +143,7 @@ def compute_hotspots(db: Session) -> dict:
             Complaint.waste_type,
             Complaint.severity_score,
             Complaint.created_at,
+            Complaint.ward_id,
         )
         .filter(
             Complaint.created_at >= cutoff,
@@ -185,6 +187,14 @@ def compute_hotspots(db: Session) -> dict:
                 if rows[i].waste_type
             )
             newest = max(rows[i].created_at for i in members if rows[i].created_at)
+            oldest = min(rows[i].created_at for i in members if rows[i].created_at)
+            ward_counts = Counter(
+                str(rows[i].ward_id) for i in members if rows[i].ward_id
+            )
+            chronic = (
+                oldest is not None
+                and datetime.utcnow() - oldest > timedelta(days=HOTSPOT_CHRONIC_DAYS)
+            )
             hotspots.append(
                 {
                     "id": label,
@@ -198,6 +208,11 @@ def compute_hotspots(db: Session) -> dict:
                         sum(rows[i].severity_score for i in members) / len(members), 1
                     ),
                     "last_reported": newest.isoformat() if newest else None,
+                    "first_reported": oldest.isoformat() if oldest else None,
+                    "chronic": chronic,
+                    "ward_id": (
+                        ward_counts.most_common(1)[0][0] if ward_counts else None
+                    ),
                 }
             )
         hotspots.sort(key=lambda h: h["count"], reverse=True)

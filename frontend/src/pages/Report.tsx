@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api, errorMessage } from '../api'
-import type { AiDraft, AnalyzeResponse } from '../types'
+import type { AiDraft, AnalyzeResponse, AnalyzeWard } from '../types'
 import PhotoCapture from '../components/PhotoCapture'
 import AiAnalysisProgress from '../components/AiAnalysisProgress'
 import AiDraftForm, { DraftFields } from '../components/AiDraftForm'
@@ -18,6 +19,7 @@ function Report() {
   const [latitude, setLatitude] = useState(String(DEFAULT_LAT))
   const [longitude, setLongitude] = useState(String(DEFAULT_LON))
   const [draft, setDraft] = useState<AiDraft | null>(null)
+  const [ward, setWard] = useState<AnalyzeWard | null>(null)
   const [imageRef, setImageRef] = useState<{ url: string; key: string } | null>(null)
   const [analysisDone, setAnalysisDone] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -55,6 +57,7 @@ function Report() {
       const { data } = await api.post<AnalyzeResponse>('/complaints/analyze', form)
       setDraft(data.draft)
       setImageRef(data.image)
+      setWard(data.ward)
       setAnalysisDone(true)
     } catch (err) {
       setError(errorMessage(err))
@@ -69,6 +72,7 @@ function Report() {
     }
     setError('')
     setDraft(null)
+    setWard(null)
     setImageRef(null)
     setStep('review')
   }
@@ -107,6 +111,7 @@ function Report() {
   const reset = () => {
     handleFileChange(null)
     setDraft(null)
+    setWard(null)
     setImageRef(null)
     setTicket(null)
     setError('')
@@ -121,6 +126,14 @@ function Report() {
         <p className="text-gray-600 mb-4">Your ticket number is</p>
         <p data-testid="ticket-number" className="text-2xl font-mono font-bold text-green-700 mb-6">
           {ticket}
+        </p>
+        {ward && (
+          <p className="text-sm text-blue-700 mb-3">📍 Reported in {ward.name}</p>
+        )}
+        <p className="mb-4">
+          <Link to={`/track/${ticket}`} className="text-blue-700 hover:underline text-sm">
+            🔎 Track this complaint
+          </Link>
         </p>
         {draft && (
           <p className="text-sm text-gray-500 mb-6">
@@ -175,6 +188,7 @@ function Report() {
           key={draft ? 'ai' : 'manual'}
           previewUrl={previewUrl}
           draft={draft}
+          ward={draft ? ward : null}
           busy={busy}
           error={error}
           onSubmit={submit}

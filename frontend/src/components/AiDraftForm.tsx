@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import type { AiDraft } from '../types'
+import type { AiDraft, AnalyzeWard } from '../types'
 
 const WASTE_TYPES = [
   { value: 'bin', label: 'Overflowing Bin' },
@@ -20,6 +20,7 @@ export interface DraftFields {
 interface Props {
   previewUrl: string | null
   draft: AiDraft | null
+  ward?: AnalyzeWard | null
   busy: boolean
   error: string
   onSubmit: (fields: DraftFields) => void
@@ -35,7 +36,7 @@ function AiBadge({ visible }: { visible: boolean }) {
   )
 }
 
-function AiDraftForm({ previewUrl, draft, busy, error, onSubmit, onBack }: Props) {
+function AiDraftForm({ previewUrl, draft, ward, busy, error, onSubmit, onBack }: Props) {
   const aiMode = draft !== null
   const [title, setTitle] = useState(draft?.title ?? '')
   const [description, setDescription] = useState(draft?.description ?? '')
@@ -83,6 +84,19 @@ function AiDraftForm({ previewUrl, draft, busy, error, onSubmit, onBack }: Props
           alt="Waste report"
           className="w-full max-h-72 object-cover rounded-xl shadow-md"
         />
+      )}
+
+      {ward && (
+        <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm text-blue-800">
+          <span className="text-lg">📍</span>
+          <span>
+            Ward: <strong>{ward.name}</strong>
+            {ward.ward_number != null && ` (No. ${ward.ward_number})`}{' '}
+            {ward.officer_available
+              ? '· will be auto-assigned to the ward officer'
+              : '· no officer currently available — queued for the municipal desk'}
+          </span>
+        </div>
       )}
 
       {aiMode && (

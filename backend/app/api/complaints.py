@@ -7,6 +7,7 @@ listing complaints by ward, and updating complaint status.
 
 import io
 import logging
+import time
 import uuid as uuid_module
 from datetime import datetime, timedelta
 from uuid import UUID
@@ -14,8 +15,10 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from backend_models import User, Complaint
+from backend_models import User, Complaint, Ward, Assignment, ComplaintStatus
 from backend.app.services import ai_service
+from backend.app.services import priority_service
+from backend.app.services import verification_service
 from backend_schemas import ComplaintCreateRequest, ComplaintResponse, ComplaintUpdateRequest
 from backend.app.dependencies import get_db, get_current_user, get_current_officer
 from backend.app.services import complaint_service
@@ -52,6 +55,32 @@ def _complaint_to_dict(complaint: Complaint) -> dict:
         "updated_at": complaint.updated_at.isoformat() if complaint.updated_at else None,
         "resolved_at": complaint.resolved_at.isoformat() if complaint.resolved_at else None,
     }
+
+
+def _assignment_info(a: Optional[Assignment]) -> Optional[dict]:
+    if a is None:
+        return None
+    return {
+        "assigned_at": a.assigned_at.isoformat() if a.assigned_at else None,
+        "completed_at": a.completed_at.isoformat() if a.completed_at else None,
+        "completion_image_url": a.completion_image_url,
+        "verified": bool(a.verified),
+        "verification_ssim_score": a.verification_ssim_score,
+    }
+
+
+def _attach_assignments(db: Session, complaint_dicts: List[dict]) -> List[dict]:
+    """Add an 'assignment' block to complaint dicts in one IN query."""
+    ids = [d["id"] for d in complaint_dicts]
+    if not ids:
+        return complaint_dicts
+    by_complaint = {
+        str(a.complaint_id): a
+        for a in db.query(Assignment).filter(Assignment.complaint_id.in_(ids)).all()
+    }
+    for d in complaint_dicts:
+        d["assignment"] = _assignment_info(by_complaint.get(d["id"]))
+    return complaint_dicts
 
 
 @router.post("/complaints/analyze", response_model=dict)
@@ -112,11 +141,37 @@ async def analyze_complaint_photo(
     # Never raises — falls back to a mock draft on any AI failure
     draft = ai_service.analyze_waste_image(compressed_image)
 
+    # Ward mapping step: real PostGIS lookup so the wizard can show where the
+    # complaint will be routed. Never fails the analyze call.
+    ward_info = None
+    if latitude is not None and longitude is not None:
+        try:
+            ward = complaint_service.find_ward_for_display(db, latitude, longitude)
+            if ward:
+                officer_count = (
+                    db.query(User)
+                    .filter(
+                        User.ward_id == ward.id,
+                        User.user_type == "officer",
+                        User.is_active.is_(True),
+                    )
+                    .count()
+                )
+                ward_info = {
+                    "id": str(ward.id),
+                    "name": ward.name,
+                    "ward_number": ward.ward_number,
+                    "officer_available": officer_count > 0,
+                }
+        except Exception as e:
+            logger.warning(f"Ward mapping during analyze failed: {str(e)}")
+
     logger.info(
         f"Photo analyzed for user {current_user.id}: "
-        f"{draft.get('waste_type')} (source: {draft.get('source')})"
+        f"{draft.get('waste_type')} (source: {draft.get('source')}, "
+        f"ward: {ward_info['name'] if ward_info else 'n/a'})"
     )
-    return {"draft": draft, "image": {"url": s3_url, "key": s3_key}}
+    return {"draft": draft, "image": {"url": s3_url, "key": s3_key}, "ward": ward_info}
 
 
 @router.get("/complaints/map", response_model=dict)
@@ -167,6 +222,259 @@ async def complaints_map_feed(db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to load map data"
+        )
+
+
+@router.get("/complaints/queue", response_model=dict)
+async def complaints_priority_queue(
+    ward_id: UUID,
+    current_officer: User = Depends(get_current_officer),
+    db: Session = Depends(get_db)
+):
+    """
+    AI-ranked priority queue for a ward's active complaints (officer only).
+
+    Each item carries priority_score/band, human-readable reasons, age bucket
+    (fresh/aging/overdue) and hotspot membership. Also returns aging counts and
+    the ward's resolved total.
+    """
+    if str(current_officer.ward_id) != str(ward_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only view the queue for your assigned ward"
+        )
+    try:
+        return priority_service.build_queue(db, ward_id)
+    except Exception as e:
+        logger.error(f"Error building priority queue: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to build priority queue"
+        )
+
+
+@router.get("/complaints/mine", response_model=dict)
+async def my_complaints(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Current user's own complaints, newest first, with ward name and
+    assignment/verification info (for status timelines and after-photos)."""
+    try:
+        complaints = (
+            db.query(Complaint)
+            .filter(Complaint.citizen_id == current_user.id)
+            .order_by(Complaint.created_at.desc())
+            .limit(100)
+            .all()
+        )
+        dicts = [_complaint_to_dict(c) for c in complaints]
+        _attach_assignments(db, dicts)
+
+        ward_ids = {d["ward_id"] for d in dicts}
+        ward_names = {}
+        if ward_ids:
+            for w in db.query(Ward).filter(Ward.id.in_(ward_ids)).all():
+                ward_names[str(w.id)] = w.name
+        for d in dicts:
+            d["ward_name"] = ward_names.get(d["ward_id"])
+
+        return {"complaints": dicts, "count": len(dicts)}
+    except Exception as e:
+        logger.error(f"Error listing own complaints: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to load your complaints"
+        )
+
+
+_STATUS_ORDER = {"open": 0, "assigned": 1, "in_progress": 2, "resolved": 3}
+
+
+@router.get("/complaints/track/{ticket_number}", response_model=dict)
+async def track_complaint(ticket_number: str, db: Session = Depends(get_db)):
+    """
+    Public complaint tracker by ticket number — sanitized (no reporter identity,
+    no description text, no exact coordinates).
+    """
+    try:
+        complaint = (
+            db.query(Complaint)
+            .filter(Complaint.ticket_number == ticket_number)
+            .first()
+        )
+        if not complaint:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No complaint found for ticket {ticket_number}"
+            )
+
+        assignment = (
+            db.query(Assignment)
+            .filter(Assignment.complaint_id == complaint.id)
+            .first()
+        )
+        ward = db.query(Ward).filter(Ward.id == complaint.ward_id).first()
+
+        status_value = (
+            complaint.status.value
+            if hasattr(complaint.status, "value")
+            else complaint.status
+        )
+        ordinal = _STATUS_ORDER.get(status_value, 0)
+        timeline = [
+            {
+                "step": "submitted",
+                "at": complaint.created_at.isoformat() if complaint.created_at else None,
+                "reached": True,
+            },
+            {
+                "step": "assigned",
+                "at": (
+                    assignment.assigned_at.isoformat()
+                    if assignment and assignment.assigned_at and ordinal >= 1
+                    else None
+                ),
+                "reached": ordinal >= 1,
+            },
+            {"step": "in_progress", "at": None, "reached": ordinal >= 2},
+            {
+                "step": "resolved",
+                "at": complaint.resolved_at.isoformat() if complaint.resolved_at else None,
+                "reached": ordinal >= 3,
+            },
+        ]
+
+        return {
+            "ticket_number": complaint.ticket_number,
+            "status": status_value,
+            "waste_type": (
+                complaint.waste_type.value
+                if hasattr(complaint.waste_type, "value")
+                else complaint.waste_type
+            ),
+            "severity_score": complaint.severity_score,
+            "ward": (
+                {"name": ward.name, "ward_number": ward.ward_number} if ward else None
+            ),
+            "created_at": complaint.created_at.isoformat() if complaint.created_at else None,
+            "resolved_at": complaint.resolved_at.isoformat() if complaint.resolved_at else None,
+            "photo_url": (complaint.image_urls or [None])[0],
+            "after_photo_url": assignment.completion_image_url if assignment else None,
+            "verified": bool(assignment.verified) if assignment else False,
+            "timeline": timeline,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error tracking complaint: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to track complaint"
+        )
+
+
+@router.post("/complaints/{complaint_id}/resolve", response_model=dict)
+async def resolve_complaint(
+    complaint_id: UUID,
+    file: UploadFile = File(None),
+    notes: Optional[str] = Form(None),
+    current_officer: User = Depends(get_current_officer),
+    db: Session = Depends(get_db)
+):
+    """
+    Resolve a complaint with optional before/after photo verification (officer only).
+
+    With an "after" photo: uploads it, computes SSIM vs the original photo and
+    asks GPT-4o whether the waste was genuinely cleaned; the verdict is stored
+    on the assignment. Without a photo the complaint is resolved unverified.
+    """
+    complaint = complaint_service.get_complaint_by_id(db, complaint_id)
+    if not complaint:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Complaint {complaint_id} not found"
+        )
+    if str(current_officer.ward_id) != str(complaint.ward_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only resolve complaints from your assigned ward"
+        )
+    status_value = (
+        complaint.status.value if hasattr(complaint.status, "value") else complaint.status
+    )
+    if status_value == "resolved":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Complaint is already resolved"
+        )
+
+    try:
+        verification = None
+        if file is not None:
+            is_valid, error_msg = validate_file_type(file.filename)
+            if not is_valid:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg
+                )
+            file_content = await file.read()
+            is_valid, error_msg = validate_file_size(len(file_content), max_mb=5)
+            if not is_valid:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg
+                )
+            try:
+                clean = image_service.strip_exif_metadata(file_content)
+                compressed = image_service.compress_image(clean)
+            except ValueError as e:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Image processing failed: {str(e)}"
+                )
+            after_url = image_service.upload_image_to_s3(
+                file_bytes=compressed,
+                filename=f"after_{int(time.time())}.jpg",
+                complaint_id=str(complaint.id),
+            )
+            verification = verification_service.verify_resolution(
+                db=db,
+                complaint=complaint,
+                officer_id=current_officer.id,
+                after_bytes=compressed,
+                after_url=after_url,
+                notes=notes,
+            )
+
+        updated = complaint_service.update_complaint_status(
+            db=db, complaint_id=complaint_id, new_status="resolved", notes=notes
+        )
+
+        resolved_total = (
+            db.query(Complaint)
+            .filter(
+                Complaint.ward_id == complaint.ward_id,
+                Complaint.status == ComplaintStatus.resolved,
+            )
+            .count()
+        )
+
+        logger.info(
+            f"Complaint {complaint.ticket_number} resolved by officer "
+            f"{current_officer.id} (verified: "
+            f"{verification['verified'] if verification else 'no photo'})"
+        )
+        return {
+            "complaint": _complaint_to_dict(updated),
+            "verification": verification,
+            "resolved_total": resolved_total,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error resolving complaint: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to resolve complaint"
         )
 
 
@@ -391,7 +699,7 @@ async def get_complaint(
                 detail=f"Complaint {complaint_id} not found"
             )
 
-        return _complaint_to_dict(complaint)
+        return _attach_assignments(db, [_complaint_to_dict(complaint)])[0]
 
     except HTTPException:
         raise
@@ -490,7 +798,9 @@ async def list_complaints(
         total = complaint_service.get_complaint_count_by_ward(db, ward_id, status)
 
         return {
-            "complaints": [_complaint_to_dict(c) for c in complaints],
+            "complaints": _attach_assignments(
+                db, [_complaint_to_dict(c) for c in complaints]
+            ),
             "total": total,
             "limit": limit,
             "offset": offset

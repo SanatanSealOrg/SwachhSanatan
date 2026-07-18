@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { api, errorMessage } from '../api'
 import { useAuth } from '../store'
+import OfficerDashboard from '../components/officer/OfficerDashboard'
 
 interface Complaint {
   id: string
@@ -29,6 +30,21 @@ const STATUS_COLORS: Record<string, string> = {
 
 function Officer() {
   const { wardId, userType } = useAuth()
+
+  // Officers get the rich command center; admins/others keep the ward browser below
+  if (userType === 'officer') {
+    return <OfficerDashboard />
+  }
+  return <LegacyOfficerTable wardId={wardId} userType={userType} />
+}
+
+function LegacyOfficerTable({
+  wardId,
+  userType,
+}: {
+  wardId: string | null
+  userType: string | null
+}) {
   const [wards, setWards] = useState<WardInfo[]>([])
   const [selectedWard, setSelectedWard] = useState<string>(wardId ?? '')
   const [statusFilter, setStatusFilter] = useState('')

@@ -93,6 +93,17 @@ def strip_exif_metadata(image_bytes: bytes) -> bytes:
     try:
         img = Image.open(io.BytesIO(image_bytes))
 
+        # JPEG can't hold an alpha channel — flatten RGBA/LA/P onto white first
+        if img.mode in ("RGBA", "LA", "P"):
+            rgb_img = Image.new("RGB", img.size, (255, 255, 255))
+            rgb_img.paste(
+                img.convert("RGBA"),
+                mask=img.convert("RGBA").split()[-1],
+            )
+            img = rgb_img
+        elif img.mode != "RGB":
+            img = img.convert("RGB")
+
         # Create new image without metadata
         data = list(img.getdata())
         image_without_exif = Image.new(img.mode, img.size)

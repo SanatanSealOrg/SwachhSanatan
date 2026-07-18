@@ -6,6 +6,7 @@ const STEPS = [
   { icon: '🗑️', label: 'Detecting waste type', detail: 'Identifying the kind of waste…' },
   { icon: '⚠️', label: 'Assessing severity', detail: 'Judging urgency and public-health impact…' },
   { icon: '📝', label: 'Drafting official report', detail: 'Writing your complaint in official language…' },
+  { icon: '🗺️', label: 'Mapping ward & assigning officer', detail: 'Locating your ward and its sanitation officer…' },
 ]
 
 const STEP_MS = 1300

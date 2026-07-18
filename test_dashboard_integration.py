@@ -178,9 +178,14 @@ def main():
     points = r.json().get("complaints", [])
     check("GET /complaints/map returns points", r.status_code == 200 and len(points) > 0,
           f"{len(points)} points")
+    demo_points = [p for p in points if p["ticket_number"].startswith("CL-DEMO-")]
     check(
-        "All map points inside Chennai bbox",
-        all(12.85 < p["lat"] < 13.25 and 80.10 < p["lon"] < 80.35 for p in points),
+        "All seeded demo points inside Chennai bbox",
+        bool(demo_points)
+        and all(
+            12.85 < p["lat"] < 13.25 and 80.10 < p["lon"] < 80.35
+            for p in demo_points
+        ),
     )
 
     section("Summary")

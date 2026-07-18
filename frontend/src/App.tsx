@@ -6,6 +6,8 @@ import Login from './pages/Login'
 import Report from './pages/Report'
 import Officer from './pages/Officer'
 import Metrics from './pages/Metrics'
+import MyComplaints from './pages/MyComplaints'
+import Track from './pages/Track'
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
   const { token } = useAuth()
@@ -17,7 +19,7 @@ function RequireAuth({ children }: { children: React.ReactElement }) {
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
-  const { token, email, logout } = useAuth()
+  const { token, email, userType, logout } = useAuth()
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-green-100 flex flex-col">
@@ -30,6 +32,21 @@ function Shell({ children }: { children: React.ReactNode }) {
             <p className="text-gray-600 mt-2">Community Waste & Sanitation Intelligence</p>
           </div>
           <div className="text-sm text-right">
+            <nav className="flex gap-4 justify-end mb-2">
+              <Link to="/track" className="text-blue-700 hover:underline">
+                🔎 Track
+              </Link>
+              {token && userType !== 'officer' && (
+                <Link to="/my-complaints" className="text-blue-700 hover:underline">
+                  🗂️ My Reports
+                </Link>
+              )}
+              {token && userType === 'officer' && (
+                <Link to="/officer" className="text-blue-700 hover:underline">
+                  🛡️ Dashboard
+                </Link>
+              )}
+            </nav>
             {token ? (
               <>
                 <p className="text-gray-600 mb-1">{email}</p>
@@ -83,6 +100,16 @@ function App() {
             }
           />
           <Route path="/metrics" element={<Metrics />} />
+          <Route
+            path="/my-complaints"
+            element={
+              <RequireAuth>
+                <MyComplaints />
+              </RequireAuth>
+            }
+          />
+          <Route path="/track" element={<Track />} />
+          <Route path="/track/:ticket" element={<Track />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Shell>
