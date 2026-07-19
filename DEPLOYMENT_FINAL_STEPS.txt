@@ -1,0 +1,220 @@
+﻿# ════════════════════════════════════════════════════════════════════
+# CLEANLOOP DEPLOYMENT - STEP-BY-STEP WEB INTERFACE GUIDE
+# ════════════════════════════════════════════════════════════════════
+
+## YOUR CREDENTIALS
+
+Railway API Token:    <set-in-your-local-env-do-not-commit>
+Vercel API Token:     <set-in-your-local-env-do-not-commit>
+GitHub Repo:          https://github.com/tatasuresh/SwachhSanatan
+
+## STEP-BY-STEP DEPLOYMENT (15 minutes total)
+
+═══════════════════════════════════════════════════════════════════════
+
+### STEP 1: RAILWAY BACKEND DEPLOYMENT (8 minutes)
+
+#### 1.1 Create Railway Project
+1. Go to: https://dashboard.railway.app
+2. Click "New Project"
+3. Name: "cleanloop-backend"
+4. Click "Create Project"
+
+#### 1.2 Add PostgreSQL Database
+1. Click "+ New"
+2. Select "Database" → "PostgreSQL"
+3. Wait 1-2 minutes for provisioning
+4. Click on PostgreSQL service card
+5. Go to "Variables" tab
+6. COPY the "DATABASE_URL" value (you'll need this)
+7. Example: postgresql://user:pass@host:5432/db
+
+#### 1.3 Add Redis Cache
+1. Click "+ New" again
+2. Select "Database" → "Redis"
+3. Wait 1-2 minutes for provisioning
+4. Click on Redis service card
+5. Go to "Variables" tab
+6. COPY the "REDIS_URL" value (you'll need this)
+7. Example: redis://user:pass@host:6379
+
+#### 1.4 Connect GitHub Repository
+1. Click "+ New"
+2. Select "GitHub Repo"
+3. Search for: "SwachhSanatan"
+4. Select: tatasuresh/SwachhSanatan
+5. Select branch: "main"
+6. Click "Deploy"
+7. Wait for the service to appear
+
+#### 1.5 Configure Environment Variables
+1. Click on the Python service (the GitHub connected one)
+2. Go to "Variables" tab
+3. Click "Raw Editor"
+4. Replace everything with this:
+
+`
+DATABASE_URL=[PASTE YOUR DATABASE_URL FROM POSTGRES SERVICE]
+REDIS_URL=[PASTE YOUR REDIS_URL FROM REDIS SERVICE]
+SECRET_KEY=your-secret-key-change-this-to-something-random-32chars
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+OPENAI_API_KEY=sk-your-openai-key-here
+AWS_ACCESS_KEY_ID=test
+AWS_SECRET_ACCESS_KEY=test
+AWS_S3_BUCKET=cleanloop-images
+AWS_S3_REGION=us-east-1
+AWS_ENDPOINT_URL=https://s3.amazonaws.com
+SMTP_SERVER=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASSWORD=your-app-password
+APP_NAME=CleanLoop
+APP_ENV=production
+DEBUG=False
+LOG_LEVEL=INFO
+ALLOWED_ORIGINS=http://localhost:3000
+TIMEZONE=Asia/Kolkata
+`
+
+5. Click "Save"
+6. Railway will auto-detect Procfile and start deployment
+
+#### 1.6 Wait for Deployment
+1. Watch the "Deployments" tab
+2. Status should change to "Running" (takes 3-5 minutes)
+3. Check logs if it fails
+
+#### 1.7 Get Backend URL
+1. Click on the service
+2. Go to "Settings" tab
+3. Look for "Public URL" or service URL
+4. Copy it (looks like: https://cleanloop-api-xxxxx.railway.app)
+5. SAVE THIS URL - you need it for Vercel!
+
+#### 1.8 Test Backend
+1. Open in browser: https://[YOUR_BACKEND_URL]/health
+   Should show: {"status":"ok","service":"cleanloop-api"}
+
+═══════════════════════════════════════════════════════════════════════
+
+### STEP 2: VERCEL FRONTEND DEPLOYMENT (5 minutes)
+
+#### 2.1 Create Vercel Project
+1. Go to: https://vercel.com
+2. Click "Add New" → "Project"
+3. Search for: "SwachhSanatan"
+4. Select: tatasuresh/SwachhSanatan
+5. Click "Import"
+
+#### 2.2 Configure Build Settings
+Vercel should auto-detect, but verify:
+- Framework: Vite
+- Root Directory: frontend
+- Build Command: npm run build
+- Output Directory: dist
+
+#### 2.3 Add Environment Variable
+1. Go to "Environment Variables" section
+2. Add ONE variable:
+   - Name: VITE_API_URL
+   - Value: https://[YOUR_RAILWAY_BACKEND_URL]/api
+     (Replace [YOUR_RAILWAY_BACKEND_URL] with the URL from Step 1.7)
+   - Environments: Production, Preview, Development
+3. Click "Save"
+
+#### 2.4 Deploy
+1. Click "Deploy"
+2. Wait 2-3 minutes for build to complete
+3. Status should show "Ready"
+
+#### 2.5 Get Frontend URL
+1. Go to "Deployments" tab
+2. Click on the production deployment
+3. Copy the URL (looks like: https://cleanloop-xxxxx.vercel.app)
+4. SAVE THIS URL - you need it for next step!
+
+#### 2.6 Test Frontend
+1. Open the URL in browser
+2. Should see CleanLoop login page
+3. Check browser console (F12) - no CORS errors?
+
+═══════════════════════════════════════════════════════════════════════
+
+### STEP 3: CONNECT SERVICES - UPDATE CORS (2 minutes)
+
+#### 3.1 Update Railway CORS
+1. Go back to: https://dashboard.railway.app
+2. Click on Python service
+3. Go to "Variables" tab
+4. Find: ALLOWED_ORIGINS
+5. Change FROM: http://localhost:3000
+   Change TO: https://[YOUR_VERCEL_URL].vercel.app,https://www.[YOUR_VERCEL_URL].vercel.app
+   (Replace [YOUR_VERCEL_URL] with your Vercel URL from Step 2.5)
+6. Click "Save"
+7. Click "Redeploy"
+8. Wait for status "Running"
+
+═══════════════════════════════════════════════════════════════════════
+
+### STEP 4: FINAL VERIFICATION (2 minutes)
+
+#### 4.1 Test Backend Health
+Open in browser or curl:
+https://[YOUR_BACKEND_URL]/health
+Expected: {"status":"ok","service":"cleanloop-api"}
+
+#### 4.2 Test API Docs
+Open in browser:
+https://[YOUR_BACKEND_URL]/docs
+Expected: Swagger UI with endpoints
+
+#### 4.3 Test Frontend
+Open in browser:
+https://[YOUR_VERCEL_URL]
+Expected: Login page, no errors in console (F12)
+
+#### 4.4 Test from Different Device
+Share the Vercel URL with someone else
+They should be able to access it from their phone/device
+
+═══════════════════════════════════════════════════════════════════════
+
+## 🎉 YOU'RE DONE!
+
+Your application is now live!
+
+Backend URL: https://cleanloop-api-xxxxx.railway.app
+Frontend URL: https://cleanloop-xxxxx.vercel.app
+
+Share the FRONTEND URL with your users!
+
+═══════════════════════════════════════════════════════════════════════
+
+## TROUBLESHOOTING
+
+### CORS Error in Browser Console
+→ Verify ALLOWED_ORIGINS was updated in Railway
+→ Make sure Vercel URL is exactly correct
+→ Wait 5 minutes for Railway redeploy
+
+### Backend shows 502 error
+→ Check Railway logs for Python errors
+→ Verify all environment variables are set
+→ Check DATABASE_URL and REDIS_URL are correct
+
+### Frontend build fails
+→ Check Vercel build logs
+→ Verify VITE_API_URL is set correctly
+→ Run locally: cd frontend && npm run build
+
+### Can't access from different device
+→ Verify HTTPS URLs (not HTTP)
+→ Check ALLOWED_ORIGINS includes the domain
+→ Verify no localhost references
+
+═══════════════════════════════════════════════════════════════════════
+
+Questions? Check these files:
+- DEPLOYMENT_GUIDE.md (comprehensive 430-line guide)
+- DEPLOYMENT_CHECKLIST.md (interactive checklist)
