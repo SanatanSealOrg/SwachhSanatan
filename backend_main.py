@@ -23,6 +23,10 @@ from backend.app.api import hotspots
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("🚀 CleanLoop API Starting...")
+    if os.getenv("AWS_ENDPOINT_URL"):
+        # LocalStack loses buckets on restart — recreate the image bucket in dev
+        from backend.app.utils.s3 import ensure_bucket_exists
+        ensure_bucket_exists()
     yield
     # Shutdown
     logger.info("🛑 CleanLoop API Shutting down...")

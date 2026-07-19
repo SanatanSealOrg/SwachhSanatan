@@ -50,6 +50,30 @@ def get_s3_client():
         raise
 
 
+def ensure_bucket_exists() -> None:
+    """
+    Create the configured S3 bucket if it does not exist (idempotent).
+
+    Intended for dev against LocalStack, which loses all buckets on container
+    restart. Failures are logged but not raised so API startup is never blocked.
+    """
+    bucket = os.getenv("AWS_S3_BUCKET", "cleanloop-images")
+    try:
+        s3_client = get_s3_client()
+        existing = [b["Name"] for b in s3_client.list_buckets().get("Buckets", [])]
+        if bucket in existing:
+            logger.debug(f"S3 bucket '{bucket}' already exists")
+            return
+        region = os.getenv("AWS_REGION", "us-east-1")
+        kwargs = {"Bucket": bucket}
+        if region != "us-east-1":
+            kwargs["CreateBucketConfiguration"] = {"LocationConstraint": region}
+        s3_client.create_bucket(**kwargs)
+        logger.info(f"Created S3 bucket '{bucket}'")
+    except Exception as e:
+        logger.warning(f"Could not ensure S3 bucket '{bucket}' exists: {str(e)}")
+
+
 def get_s3_key(complaint_id: str, filename: str) -> str:
     """
     Generate S3 object key for a complaint image.
