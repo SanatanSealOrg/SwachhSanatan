@@ -155,6 +155,10 @@ def seed_wards_and_officers(db):
             ward.primary_officer_id = w_officer.id
             db.commit()
         ward_by_name[name] = (ward, bbox)
+
+    # Give the fallback dev ward a small slice of scattered complaints too,
+    # so officer@cleanloop.dev has something to see in the demo.
+    ward_by_name[dev_ward.name] = (dev_ward, (80.10, 12.85, 80.35, 13.25))
     return ward_by_name
 
 
