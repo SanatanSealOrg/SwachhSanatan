@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+﻿from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
@@ -22,14 +22,14 @@ from backend.app.api import hotspots
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    logger.info("🚀 CleanLoop API Starting...")
+    logger.info("ðŸš€ CleanLoop API Starting...")
     if os.getenv("AWS_ENDPOINT_URL"):
-        # LocalStack loses buckets on restart — recreate the image bucket in dev
+        # LocalStack loses buckets on restart â€” recreate the image bucket in dev
         from backend.app.utils.s3 import ensure_bucket_exists
         ensure_bucket_exists()
     yield
     # Shutdown
-    logger.info("🛑 CleanLoop API Shutting down...")
+    logger.info("ðŸ›‘ CleanLoop API Shutting down...")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -40,7 +40,7 @@ app = FastAPI(
 )
 
 # Add CORS middleware
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+allowed_origins = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",") if origin.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
@@ -72,3 +72,5 @@ app.include_router(hotspots.router, prefix="/api")
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+
+
