@@ -4,8 +4,8 @@
 #############################################################################
 
 param(
-    [string]$RailwayToken = "<REDACTED_RAILWAY_TOKEN>",
-    [string]$VercelToken = "<REDACTED_VERCEL_TOKEN>"
+    [string]$RailwayToken = $env:RAILWAY_TOKEN,
+    [string]$VercelToken = $env:VERCEL_TOKEN
 )
 
 Write-Host ""

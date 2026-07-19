@@ -4,8 +4,8 @@
 
 ## YOUR CREDENTIALS
 
-Railway API Token:    <REDACTED_RAILWAY_TOKEN>
-Vercel API Token:     <REDACTED_VERCEL_TOKEN>
+Railway API Token:    <set-in-your-local-env-do-not-commit>
+Vercel API Token:     <set-in-your-local-env-do-not-commit>
 GitHub Repo:          https://github.com/tatasuresh/SwachhSanatan
 
 ## STEP-BY-STEP DEPLOYMENT (15 minutes total)
