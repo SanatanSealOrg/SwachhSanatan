@@ -32,7 +32,7 @@ WHAT'S BEEN PREPARED FOR YOU:
    - DEPLOYMENT_CHECKLIST.md (interactive checklist)
 
 5. ✅ YOUR CREDENTIALS
-   - Railway API Token: 27f3f1c6-a42c-4fd4-a2f9-a685e4ce305e
+   - Railway API Token: <<enter here>>
    - GitHub Repo: https://github.com/tatasuresh/SwachhSanatan
    - Branch: main
 
