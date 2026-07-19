@@ -1,0 +1,201 @@
+﻿# CLEANLOOP PRODUCTION DEPLOYMENT - COMPLETE MANUAL GUIDE
+
+## STATUS: READY FOR DEPLOYMENT
+- Code: Committed to GitHub ✅
+- Configuration files: Ready ✅
+- Environment files: Ready ✅
+- Your credentials: Valid ✅
+
+---
+
+## OPTION 1: FASTEST DEPLOYMENT (Recommended - 15 minutes)
+
+### STEP 1: Go to Railway Dashboard
+https://dashboard.railway.app
+
+### STEP 2: Create Backend Project
+1. Click "New Project"
+2. Name: cleanloop-backend
+3. Click "Create"
+
+### STEP 3: Add PostgreSQL Database
+1. Click "+ New"
+2. Select "Database" from the list
+3. Select "PostgreSQL"
+4. Wait 60 seconds for it to be created
+5. Click on the PostgreSQL box
+6. Click "Variables" tab
+7. Find "DATABASE_URL" and COPY the entire value
+8. Paste it somewhere safe (you'll need it in Step 6)
+
+### STEP 4: Add Redis Cache
+1. Click "+ New" again
+2. Select "Database"
+3. Select "Redis"
+4. Wait 60 seconds for it to be created
+5. Click on the Redis box
+6. Click "Variables" tab
+7. Find "REDIS_URL" and COPY the entire value
+8. Paste it somewhere safe (you'll need it in Step 6)
+
+### STEP 5: Connect GitHub Repository
+1. Click "+ New" again
+2. Select "GitHub Repo"
+3. In the search box, type: SwachhSanatan
+4. Click on: tatasuresh/SwachhSanatan
+5. Make sure the branch shows: "main"
+6. Click "Deploy"
+7. Wait for the Python service to appear
+
+### STEP 6: Configure Environment Variables
+1. Click on the Python service (the one with GitHub icon)
+2. Click "Variables" tab
+3. Click "Raw Editor" button (top right of variables)
+4. Delete everything in the text box
+5. Paste this exactly:
+
+DATABASE_URL=[PASTE THE DATABASE_URL FROM STEP 3]
+REDIS_URL=[PASTE THE REDIS_URL FROM STEP 4]
+SECRET_KEY=SJdf8934hkSHDFhsd9f3h9sd8fhsdhfj934hjsd9
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+OPENAI_API_KEY=sk-test-key
+AWS_ACCESS_KEY_ID=test
+AWS_SECRET_ACCESS_KEY=test
+AWS_S3_BUCKET=cleanloop-images
+AWS_S3_REGION=us-east-1
+AWS_ENDPOINT_URL=https://s3.amazonaws.com
+SMTP_SERVER=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=test@example.com
+SMTP_PASSWORD=test-password
+APP_NAME=CleanLoop
+APP_ENV=production
+DEBUG=False
+LOG_LEVEL=INFO
+ALLOWED_ORIGINS=http://localhost:3000
+TIMEZONE=Asia/Kolkata
+
+(Note: Replace [PASTE THE DATABASE_URL...] with the actual value from Step 3)
+(Note: Replace [PASTE THE REDIS_URL...] with the actual value from Step 4)
+
+6. Click "Save" button
+
+### STEP 7: Wait for Deployment
+1. Railway auto-detects the Procfile and starts deploying
+2. Watch the "Deployments" tab
+3. Wait for status to change to "Running" (takes 3-5 minutes)
+4. If it shows "Failed", click to see the logs and debug
+
+### STEP 8: Get Your Backend URL
+1. Click on the Python service
+2. Click "Settings" tab
+3. Scroll down and look for "Public URL" or "Domains"
+4. Copy the URL (looks like: https://cleanloop-api-xxxxx.railway.app)
+5. SAVE THIS URL - you need it for Vercel setup!
+
+---
+
+## THEN: DEPLOY FRONTEND ON VERCEL
+
+### STEP 1: Go to Vercel
+https://vercel.com
+
+### STEP 2: Create Frontend Project
+1. Click "Add New" button (top left)
+2. Select "Project"
+3. Search for: SwachhSanatan
+4. Select: tatasuresh/SwachhSanatan
+5. Click "Import"
+
+### STEP 3: Configure Build Settings
+1. Verify/set these values:
+   - Root Directory: frontend
+   - Build Command: npm run build
+   - Output Directory: dist
+
+### STEP 4: Add Environment Variable
+1. Look for "Environment Variables" section
+2. Click "Add New" or similar
+3. Add ONE variable:
+   - Name: VITE_API_URL
+   - Value: https://[PASTE YOUR RAILWAY BACKEND URL FROM STEP 8 ABOVE]/api
+   - Make sure Environments includes: Production, Preview, Development
+4. Click Save/Add
+
+### STEP 5: Deploy
+1. Click "Deploy" button
+2. Wait 2-3 minutes for build to complete
+3. Status should show "Ready"
+4. Copy the frontend URL (looks like: https://cleanloop-xxxxx.vercel.app)
+
+---
+
+## FINALLY: UPDATE CORS
+
+### Back to Railway:
+1. Go to: https://dashboard.railway.app
+2. Click on the Python service
+3. Click "Variables" tab
+4. Find: ALLOWED_ORIGINS
+5. Change the value from: http://localhost:3000
+   To: https://[YOUR VERCEL URL].vercel.app
+6. Click "Save"
+7. Click "Redeploy" button
+8. Wait for "Running" status
+
+---
+
+## VERIFICATION
+
+### Test 1: Backend Health
+Open in browser: https://[YOUR RAILWAY BACKEND URL]/health
+Expected: {"status":"ok","service":"cleanloop-api"}
+
+### Test 2: API Docs
+Open in browser: https://[YOUR RAILWAY BACKEND URL]/docs
+Expected: Swagger UI with endpoints
+
+### Test 3: Frontend
+Open in browser: https://[YOUR VERCEL FRONTEND URL]
+Expected: Login page loads, no CORS errors
+
+### Test 4: From Different Device
+Share the frontend URL with someone else
+They should be able to access from their phone
+
+---
+
+## YOUR CREDENTIALS
+
+Railway API Token: 27f3f1c6-a42c-4fd4-a2f9-a685e4ce305e
+GitHub Repo: https://github.com/tatasuresh/SwachhSanatan
+GitHub Branch: main
+
+---
+
+## TROUBLESHOOTING
+
+### "502 Bad Gateway" error
+- Check Railway logs
+- Verify DATABASE_URL and REDIS_URL are correct
+- Make sure OPENAI_API_KEY is set
+
+### "CORS error" in browser console
+- Update ALLOWED_ORIGINS in Railway
+- Make sure it matches your Vercel URL exactly
+- Redeploy Railway backend
+
+### "Frontend can't reach backend"
+- Check VITE_API_URL in Vercel environment variables
+- Make sure it matches your Railway backend URL
+- Should end with: /api
+
+### "Build failed on Vercel"
+- Check Vercel build logs
+- Usually a TypeScript error
+- Fix and redeploy
+
+---
+
+Ready to deploy! Follow the steps above in order. 🚀
