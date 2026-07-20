@@ -1,5 +1,5 @@
 import React from 'react'
-import { BrowserRouter, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from './store'
 import Home from './pages/Home'
 import Login from './pages/Login'
@@ -20,6 +20,12 @@ function RequireAuth({ children }: { children: React.ReactElement }) {
 
 function Shell({ children }: { children: React.ReactNode }) {
   const { token, email, userType, logout } = useAuth()
+  const navigate = useNavigate()
+
+  const handleSignOut = () => {
+    logout()
+    navigate('/', { replace: true })
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-green-100 flex flex-col">
@@ -50,7 +56,7 @@ function Shell({ children }: { children: React.ReactNode }) {
             {token ? (
               <>
                 <p className="text-gray-600 mb-1">{email}</p>
-                <button onClick={logout} className="text-red-600 hover:underline">
+                <button onClick={handleSignOut} className="text-red-600 hover:underline">
                   Sign out
                 </button>
               </>

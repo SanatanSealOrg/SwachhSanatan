@@ -20,3 +20,6 @@ localstack_data/
 postgres_data/
 .env.local
 .env.*.local
+
+.vercel
+.env*
