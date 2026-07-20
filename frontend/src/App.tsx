@@ -86,7 +86,11 @@ function Shell({ children }: { children: React.ReactNode }) {
         )}
       </header>
 
-      <main className="max-w-7xl w-full mx-auto px-4 py-12 sm:px-6 lg:px-8 flex-1">
+      <main
+        className={`max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 flex-1 ${
+          isLandingPage ? 'py-4 sm:py-6' : 'py-12'
+        }`}
+      >
         {children}
       </main>
 

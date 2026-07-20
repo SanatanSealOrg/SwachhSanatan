@@ -52,18 +52,12 @@ function Landing() {
   const [pledged, setPledged] = useState(false)
 
   const goSignUp = () => navigate('/login', { state: { mode: 'register', from: '/report' } })
-  const goSignIn = () => navigate('/login')
   const goTrack = () => navigate('/track')
 
   return (
-    <div className="space-y-20">
+    <div className="space-y-14">
       {/* Hero */}
-      <section className="text-center py-10">
-        <div className="flex justify-end mb-2">
-          <button onClick={goSignIn} className="text-green-700 text-sm hover:underline">
-            Already have an account? Sign in
-          </button>
-        </div>
+      <section className="text-center pt-2 pb-6">
         <p className="text-green-700 font-semibold tracking-wide uppercase text-sm mb-3">
           🇮🇳 In the spirit of Swachh Bharat Mission &amp; Swasth Nagarik
         </p>
