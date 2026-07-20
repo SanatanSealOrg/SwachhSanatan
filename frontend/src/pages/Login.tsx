@@ -4,15 +4,16 @@ import { useAuth } from '../store'
 import { errorMessage } from '../api'
 
 function Login() {
-  const [mode, setMode] = useState<'login' | 'register'>('login')
+  const location = useLocation()
+  const { from = '/', mode: initialMode } =
+    (location.state as { from?: string; mode?: 'login' | 'register' } | null) ?? {}
+  const [mode, setMode] = useState<'login' | 'register'>(initialMode ?? 'login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const { login, register } = useAuth()
   const navigate = useNavigate()
-  const location = useLocation()
-  const from = (location.state as { from?: string } | null)?.from ?? '/'
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()

@@ -21,54 +21,69 @@ function RequireAuth({ children }: { children: React.ReactElement }) {
 function Shell({ children }: { children: React.ReactNode }) {
   const { token, email, userType, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const isLandingPage = location.pathname === '/' && !token
 
   const handleSignOut = () => {
     logout()
     navigate('/', { replace: true })
   }
 
+  const navLinks = (
+    <nav className="flex flex-wrap items-center gap-4">
+      <Link to="/track" className="text-blue-700 hover:underline">
+        🔎 Track
+      </Link>
+      {token && userType !== 'officer' && (
+        <Link to="/my-complaints" className="text-blue-700 hover:underline">
+          🗂️ My Reports
+        </Link>
+      )}
+      {token && userType === 'officer' && (
+        <Link to="/officer" className="text-blue-700 hover:underline">
+          🛡️ Dashboard
+        </Link>
+      )}
+    </nav>
+  )
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-green-100 flex flex-col">
       <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8 flex items-center justify-between">
-          <div>
-            <Link to="/" className="text-4xl font-bold text-green-700">
-              🧹 Nagar Seva
+        {isLandingPage ? (
+          <div className="max-w-7xl mx-auto px-4 py-3 sm:px-6 lg:px-8 flex justify-end items-center gap-4 text-sm">
+            {navLinks}
+            <Link to="/login" className="text-green-700 font-medium hover:underline">
+              Sign in
             </Link>
-            <p className="text-gray-600 mt-2">
-              Community Waste &amp; Sanitation Intelligence · Swachh Bharat, Swasth Nagarik
-            </p>
           </div>
-          <div className="text-sm text-right">
-            <nav className="flex gap-4 justify-end mb-2">
-              <Link to="/track" className="text-blue-700 hover:underline">
-                🔎 Track
+        ) : (
+          <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 sm:px-6 lg:px-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <Link to="/" className="text-2xl sm:text-4xl font-bold text-green-700">
+                🧹 Nagar Seva
               </Link>
-              {token && userType !== 'officer' && (
-                <Link to="/my-complaints" className="text-blue-700 hover:underline">
-                  🗂️ My Reports
+              <p className="text-gray-600 mt-1 text-sm sm:text-base">
+                Community Waste &amp; Sanitation Intelligence
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 text-sm sm:items-end">
+              {navLinks}
+              {token ? (
+                <div className="flex items-center gap-3">
+                  <p className="text-gray-600 truncate max-w-[180px]">{email}</p>
+                  <button onClick={handleSignOut} className="text-red-600 hover:underline shrink-0">
+                    Sign out
+                  </button>
+                </div>
+              ) : (
+                <Link to="/login" className="text-green-700 font-medium hover:underline">
+                  Sign in
                 </Link>
               )}
-              {token && userType === 'officer' && (
-                <Link to="/officer" className="text-blue-700 hover:underline">
-                  🛡️ Dashboard
-                </Link>
-              )}
-            </nav>
-            {token ? (
-              <>
-                <p className="text-gray-600 mb-1">{email}</p>
-                <button onClick={handleSignOut} className="text-red-600 hover:underline">
-                  Sign out
-                </button>
-              </>
-            ) : (
-              <Link to="/login" className="text-green-700 font-medium hover:underline">
-                Sign in
-              </Link>
-            )}
+            </div>
           </div>
-        </div>
+        )}
       </header>
 
       <main className="max-w-7xl w-full mx-auto px-4 py-12 sm:px-6 lg:px-8 flex-1">

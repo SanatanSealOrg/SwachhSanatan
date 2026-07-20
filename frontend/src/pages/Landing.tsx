@@ -51,13 +51,19 @@ function Landing() {
   const navigate = useNavigate()
   const [pledged, setPledged] = useState(false)
 
-  const goReport = () => navigate('/report')
+  const goSignUp = () => navigate('/login', { state: { mode: 'register', from: '/report' } })
+  const goSignIn = () => navigate('/login')
   const goTrack = () => navigate('/track')
 
   return (
     <div className="space-y-20">
       {/* Hero */}
       <section className="text-center py-10">
+        <div className="flex justify-end mb-2">
+          <button onClick={goSignIn} className="text-green-700 text-sm hover:underline">
+            Already have an account? Sign in
+          </button>
+        </div>
         <p className="text-green-700 font-semibold tracking-wide uppercase text-sm mb-3">
           🇮🇳 In the spirit of Swachh Bharat Mission &amp; Swasth Nagarik
         </p>
@@ -74,7 +80,7 @@ function Landing() {
         </p>
         <div className="flex flex-wrap gap-4 justify-center mb-3">
           <button
-            onClick={goReport}
+            onClick={goSignUp}
             className="bg-green-600 text-white px-8 py-4 rounded-lg font-bold text-lg shadow-lg hover:bg-green-700 hover:scale-105 transition"
           >
             🚀 Sign Up &amp; Report Your First Issue
@@ -85,6 +91,38 @@ function Landing() {
         </p>
         <button onClick={goTrack} className="text-green-700 font-medium hover:underline text-sm">
           🔎 Already reported something? Track your complaint
+        </button>
+      </section>
+
+      {/* Pledge */}
+      <section className="bg-green-50 border-2 border-green-200 rounded-lg shadow p-8 max-w-2xl mx-auto text-center">
+        <p className="text-green-700 font-semibold uppercase tracking-wide text-sm mb-2">
+          🇮🇳 Take the Swachhata Pledge
+        </p>
+        <h2 className="text-2xl font-bold text-gray-800 mb-6">Pledge, then join the movement</h2>
+        <ul className="text-left space-y-3 mb-8">
+          {pledgeLines.map((line) => (
+            <li key={line} className="flex gap-3 items-start text-gray-700">
+              <span className="text-green-600 font-bold">✓</span>
+              <span>{line}</span>
+            </li>
+          ))}
+        </ul>
+        <label className="flex items-center gap-3 justify-center mb-6 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={pledged}
+            onChange={(e) => setPledged(e.target.checked)}
+            className="w-5 h-5 accent-green-600"
+          />
+          <span className="text-gray-800 font-medium">I take this pledge for a cleaner Nagar</span>
+        </label>
+        <button
+          onClick={goSignUp}
+          disabled={!pledged}
+          className="bg-green-600 text-white px-8 py-4 rounded-lg font-bold text-lg shadow-lg hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed transition"
+        >
+          🤝 I Pledge — Sign Up &amp; Join the Movement
         </button>
       </section>
 
@@ -120,42 +158,10 @@ function Landing() {
           </div>
         </div>
         <button
-          onClick={goReport}
+          onClick={goSignUp}
           className="bg-green-600 text-white px-8 py-3 rounded-lg font-bold shadow hover:bg-green-700 transition"
         >
           Sign Up Now — Submit Your First Report
-        </button>
-      </section>
-
-      {/* Pledge */}
-      <section className="bg-green-50 border-2 border-green-200 rounded-lg shadow p-8 max-w-2xl mx-auto text-center">
-        <p className="text-green-700 font-semibold uppercase tracking-wide text-sm mb-2">
-          🇮🇳 Take the Swachhata Pledge
-        </p>
-        <h2 className="text-2xl font-bold text-gray-800 mb-6">Pledge, then join the movement</h2>
-        <ul className="text-left space-y-3 mb-8">
-          {pledgeLines.map((line) => (
-            <li key={line} className="flex gap-3 items-start text-gray-700">
-              <span className="text-green-600 font-bold">✓</span>
-              <span>{line}</span>
-            </li>
-          ))}
-        </ul>
-        <label className="flex items-center gap-3 justify-center mb-6 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={pledged}
-            onChange={(e) => setPledged(e.target.checked)}
-            className="w-5 h-5 accent-green-600"
-          />
-          <span className="text-gray-800 font-medium">I take this pledge for a cleaner Nagar</span>
-        </label>
-        <button
-          onClick={goReport}
-          disabled={!pledged}
-          className="bg-green-600 text-white px-8 py-4 rounded-lg font-bold text-lg shadow-lg hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed transition"
-        >
-          🤝 I Pledge — Sign Up &amp; Join the Movement
         </button>
       </section>
 
@@ -221,7 +227,7 @@ function Landing() {
           else to file it.
         </p>
         <button
-          onClick={goReport}
+          onClick={goSignUp}
           className="bg-white text-green-700 px-8 py-4 rounded-lg font-bold text-lg shadow hover:bg-green-50 hover:scale-105 transition"
         >
           Sign Up &amp; Join the Movement — Report Now
