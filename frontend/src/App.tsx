@@ -33,9 +33,11 @@ function Shell({ children }: { children: React.ReactNode }) {
         <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8 flex items-center justify-between">
           <div>
             <Link to="/" className="text-4xl font-bold text-green-700">
-              🗑️ CleanLoop
+              🧹 Nagar Seva
             </Link>
-            <p className="text-gray-600 mt-2">Community Waste & Sanitation Intelligence</p>
+            <p className="text-gray-600 mt-2">
+              Community Waste &amp; Sanitation Intelligence · Swachh Bharat, Swasth Nagarik
+            </p>
           </div>
           <div className="text-sm text-right">
             <nav className="flex gap-4 justify-end mb-2">
@@ -75,7 +77,7 @@ function Shell({ children }: { children: React.ReactNode }) {
 
       <footer className="bg-gray-800 text-white mt-12">
         <div className="max-w-7xl mx-auto px-4 py-6 text-center">
-          <p>CleanLoop v0.1.0 | Community Waste Intelligence Platform for Chennai</p>
+          <p>Nagar Seva v0.1.0 | Community Waste Intelligence Platform for Chennai</p>
         </div>
       </footer>
     </div>

@@ -1,7 +1,7 @@
 {
-  "name": "CleanLoop",
-  "short_name": "CleanLoop",
-  "description": "Community Waste & Sanitation Intelligence Platform for Chennai",
+  "name": "Nagar Seva",
+  "short_name": "Nagar Seva",
+  "description": "Community Waste & Sanitation Intelligence Platform for cleaner cities, in the spirit of Swachh Bharat and Swasth Nagarik",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
